@@ -1,0 +1,194 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to deploy a app on EC2 with an RDS database.
+# Parameters section where you can customize values for VPC, EC2, and RDS instance configurations
+Parameters:
+  VPCName:
+    Type: String
+    Default: "LAYOUTindexVPC"
+    Description: "Name of the VPC" #Name of the VPC for this template
+
+  EC2InstanceType:
+    Type: String
+    Default: "t2.micro"
+    Description: "EC2 instance type for application" #EC2 instance type for the application 
+  
+  RDSInstanceType:
+    Type: String
+    Default: "db.t3.micro"
+    Description: "RDS instance type" # RDS instance type
+  
+  DBName:
+    Type: String
+    Default: "LAYOUTindexDB"
+    Description: "Database name for RDS" # The name of the database for RDS
+
+  DBUsername:
+    Type: String
+    Default: "admin"
+    Description: "Username for RDS" # The username for the RDS instance
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: "Password for RDS" # The password for the RDS instance
+
+Resources:
+  # VPC
+  LAYOUTindexVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16 # VPC CIDR block
+      EnableDnsSupport: true # Enable DNS support for the VPC
+      EnableDnsHostnames: true # Enable DNS hostnames for instances in the VPC
+      Tags:
+        - Key: Name
+          Value: !Ref VPCName # Assign the VPC name from parameters
+
+  # Internet Gateway to allow internet access for EC2 instances
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+# Attach the Internet Gateway to the VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref LAYOUTindexVPC # VPC ID
+      InternetGatewayId: !Ref InternetGateway # Internet Gateway ID
+
+  # Public Subnet for EC2 instances with public IP allocation
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LAYOUTindexVPC
+      CidrBlock: 10.0.1.0/24 # Subnet CIDR block
+      MapPublicIpOnLaunch: true # Automatically assign public IP to instances launched in this subnet
+      AvailabilityZone: "ap-south-1a" # Availability zone for the subnet
+      Tags:
+        - Key: Name
+          Value: "PublicSubnet" # Tag to name the subnet
+
+  # Private Subnet 1 for RDS instances in Availability Zone 1
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LAYOUTindexVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: "ap-south-1a"
+      Tags:
+        - Key: Name
+          Value: "PrivateSubnet1"
+
+  # Private Subnet 2 for RDS instances in Availability Zone 2
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LAYOUTindexVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: "ap-south-1b" # Availability zone for the subnet
+      Tags:
+        - Key: Name
+          Value: "PrivateSubnet2"
+
+  # Route Table for public subnet with a route to the internet
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LAYOUTindexVPC
+ # Define a public route to the internet via the internet gateway
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway  # Ensure the gateway is attached before creating the route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0" # Route for all outbound traffic
+      GatewayId: !Ref InternetGateway
+
+# Associate the public subnet with the public route table
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # # Security Group for EC2 allowing HTTP (80) and SSH (22) access
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow HTTP and SSH access to EC2"
+      VpcId: !Ref LAYOUTindexVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 # Allow SSH from any IP (this can be restricted further for security)
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0  # Allow HTTP from any IP (this can be restricted if needed)
+
+# Security Group for RDS allowing MySQL (3306) access from EC2 instances
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow MySQL access from EC2 instance"
+      VpcId: !Ref LAYOUTindexVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref EC2SecurityGroup # Allow access from EC2 security group
+
+  # EC2 Instance
+  LAYOUTindexEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref EC2InstanceType
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      ImageId: ami-0dee22c13ea7a9a67  # Ubuntu ami
+      KeyName: "devops-user-key" # Key pair for SSH access(This is created by me)  
+      Tags:
+        - Key: Name
+          Value: "LAYOUTindexEC2Instance"
+
+  # RDS Instance
+  LAYOUTindexRDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: 20 # Storage size for the RDS instance (20GB)
+      DBInstanceClass: !Ref RDSInstanceType
+      Engine: mysql
+      EngineVersion: "8.0" # MySQL engine version
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBName: !Ref DBName
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      DBSubnetGroupName: !Ref RDSDBSubnetGroup
+      MultiAZ: false  # Set to false to avoid Multi-AZ deployment
+      PubliclyAccessible: false # RDS instance is not publicly accessible
+      StorageType: gp2 # General Purpose SSD storage for RDS
+
+  # RDS Subnet Group
+  RDSDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "Subnet group for RDS"
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      DBSubnetGroupName: "LAYOUTindexRDSSubnetGroup"
+# Outputs section to display key information after stack creation
+Outputs:
+  VPCID:
+    Description: "VPC ID"
+    Value: !Ref LAYOUTindexVPC
+
+  EC2InstancePublicIP:
+    Description: "Public IP address of EC2 instance"
+    Value: !GetAtt LAYOUTindexEC2Instance.PublicIp
+
+  RDSInstanceEndpoint:
+    Description: "Endpoint for RDS MySQL Database"
+    Value: !GetAtt LAYOUTindexRDSInstance.Endpoint.Address
