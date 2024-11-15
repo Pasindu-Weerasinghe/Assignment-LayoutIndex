@@ -56,36 +56,4 @@ This CloudFormation template is designed to deploy an application on an EC2 inst
 | `EC2InstancePublicIP` | Public IP of the EC2 instance     |
 | `RDSInstanceEndpoint` | Endpoint address for the RDS instance |
 
-## Deployment Instructions
-1. **Prepare the Environment**:
-   - Ensure you have AWS CLI and appropriate permissions for CloudFormation stack creation.
-   - Create an SSH key pair (`devops-user-key`) in the AWS Management Console or import an existing one.
 
-2. **Deploy the Stack**:
-   - Save the CloudFormation template as `template.yaml`.
-   - Use the AWS Management Console or CLI to deploy the stack:
-     ```bash
-     aws cloudformation create-stack \
-       --stack-name MyAppStack \
-       --template-body file://template.yaml \
-       --parameters ParameterKey=DBPassword,ParameterValue=<YourPassword> \
-       --capabilities CAPABILITY_NAMED_IAM
-     ```
-
-3. **Access the Deployed Resources**:
-   - Retrieve the public IP of the EC2 instance from the outputs.
-   - Connect to the EC2 instance using SSH:
-     ```bash
-     ssh -i /path/to/devops-user-key.pem ubuntu@<EC2InstancePublicIP>
-     ```
-   - Use the RDS endpoint for database connectivity.
-
-## Post-Deployment Notes
-- Secure the RDS password and ensure it is not shared.
-- Regularly update the EC2 instance and monitor the application for optimal performance.
-- Configure additional security rules for production environments.
-
-## Cleanup
-To delete the stack and clean up resources:
-```bash
-aws cloudformation delete-stack --stack-name MyAppStack
